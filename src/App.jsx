@@ -4,6 +4,7 @@ import { open as dialogOpen, save as dialogSave, message } from "@tauri-apps/plu
 import JSZip from "jszip";
 import { v4 as uuidv4 } from "uuid";
 import IndexMap from "./IndexMap.jsx";
+import { maskHasContent, statusAfterEdit } from "./maskUtils.js";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const DISPLAY = 540;
@@ -14,6 +15,26 @@ const STATUS_COLOR = { pending: "#475569", labeled: "#22c55e", no_change: "#3b82
 const STATUS_LABEL = { pending: "Belum", labeled: "Berubah", no_change: "Tidak Berubah", skipped: "Skip" };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// ─── MASK HELPERS ────────────────────────────────────────────────────────────
+const newMaskCanvas = size => {
+  const c = document.createElement("canvas");
+  c.width = size; c.height = size;
+  return c;
+};
+const canvasHasContent = c =>
+  !!c && maskHasContent(c.getContext("2d").getImageData(0, 0, c.width, c.height).data);
+
+/** Kembalikan tile "Berubah" tanpa isi mask ke "Belum" (data lama sebelum perbaikan eraser). */
+function repairFalseLabels(tiles) {
+  let fixed = 0;
+  const out = tiles.map(t => {
+    if (t.status !== "labeled" || canvasHasContent(t.maskCanvas)) return t;
+    fixed++;
+    return { ...t, status: "pending", maskCanvas: null };
+  });
+  return { tiles: out, fixed };
+}
 
 // ─── THEMES ──────────────────────────────────────────────────────────────────
 const DARK = {
@@ -256,6 +277,9 @@ export default function App() {
   const canvasWrapRef = useRef();
   const lastPos       = useRef(null);
   const undoRef       = useRef({});
+  // Stroke brush/eraser yang sedang berjalan: { idx, canvas }. Canvas dimutasi
+  // selama drag dan baru di-commit ke state tiles saat stroke selesai.
+  const strokeRef     = useRef(null);
 
   const W = useRef({});
   useEffect(() => {
@@ -337,17 +361,24 @@ export default function App() {
   // Keep blendLabel color accessible inside the non-reactive redrawDisplay
   useEffect(() => { W.current._blendLabel = th.blendLabel; }, [th]);
 
-  const redrawMask = useCallback(() => {
-    const { tiles, curIdx, maskOpacity } = W.current;
-    if (!maskRef.current || !tiles[curIdx]) return;
+  // Gambar layer mask tampilan dari sebuah canvas mask (null = kosongkan).
+  const paintMaskLayer = useCallback(mc => {
+    if (!maskRef.current) return;
     const ctx = maskRef.current.getContext("2d");
     ctx.clearRect(0, 0, DISPLAY, DISPLAY);
-    if (tiles[curIdx].maskCanvas) {
-      ctx.globalAlpha = maskOpacity;
-      ctx.drawImage(tiles[curIdx].maskCanvas, 0, 0, DISPLAY, DISPLAY);
+    if (mc) {
+      ctx.globalAlpha = W.current.maskOpacity;
+      ctx.drawImage(mc, 0, 0, DISPLAY, DISPLAY);
       ctx.globalAlpha = 1;
     }
   }, []);
+
+  const redrawMask = useCallback(() => {
+    const { tiles, curIdx } = W.current;
+    const s = strokeRef.current;
+    // Selama stroke berjalan, tampilkan canvas kerja (belum di-commit ke state).
+    paintMaskLayer(s && s.idx === curIdx ? s.canvas : tiles[curIdx]?.maskCanvas || null);
+  }, [paintMaskLayer]);
 
   const redrawPoly = useCallback((pts, mousePos) => {
     if (!polyRef.current) return;
@@ -429,12 +460,35 @@ export default function App() {
       snapshot.height = tile.maskCanvas.height;
       snapshot.getContext("2d").drawImage(tile.maskCanvas, 0, 0);
     }
-    stack.push(snapshot);
+    // Status ikut disimpan agar undo mengembalikan status asli (mis. no_change).
+    stack.push({ canvas: snapshot, status: tile.status });
     if (stack.length > 20) stack.shift();
     undoRef.current[tile.id] = stack;
   }, []);
 
+  // Satu-satunya jalur menyimpan hasil edit mask. Status dihitung dari ISI mask,
+  // jadi mask kosong (mis. habis dihapus eraser) tidak pernah tercatat "Berubah".
+  const commitMask = useCallback((idx, mc) => {
+    const tiles = W.current.tiles;
+    const tile = tiles[idx];
+    if (!tile) return;
+    const has = canvasHasContent(mc);
+    const updated = [...tiles];
+    updated[idx] = { ...tile, maskCanvas: has ? mc : null, status: statusAfterEdit(tile.status, has) };
+    W.current.tiles = updated;
+    setTiles(updated);
+    if (idx === W.current.curIdx) paintMaskLayer(has ? mc : null);
+  }, [paintMaskLayer]);
+
+  const endStroke = useCallback(() => {
+    const s = strokeRef.current;
+    if (!s) return;
+    strokeRef.current = null;
+    commitMask(s.idx, s.canvas);
+  }, [commitMask]);
+
   const undo = useCallback(() => {
+    endStroke();
     const { tiles, curIdx } = W.current;
     const tile = tiles[curIdx];
     if (!tile) return;
@@ -442,19 +496,12 @@ export default function App() {
     if (!stack.length) return;
     const prev = stack.pop();
     undoRef.current[tile.id] = stack;
-    const updated = [...W.current.tiles];
-    updated[curIdx] = { ...tile, maskCanvas: prev || null, status: prev ? "labeled" : "pending" };
+    const updated = [...tiles];
+    updated[curIdx] = { ...tile, maskCanvas: prev.canvas, status: prev.status };
+    W.current.tiles = updated;
     setTiles(updated);
-    if (maskRef.current) {
-      const ctx = maskRef.current.getContext("2d");
-      ctx.clearRect(0, 0, DISPLAY, DISPLAY);
-      if (prev) {
-        ctx.globalAlpha = W.current.maskOpacity;
-        ctx.drawImage(prev, 0, 0, DISPLAY, DISPLAY);
-        ctx.globalAlpha = 1;
-      }
-    }
-  }, []);
+    paintMaskLayer(prev.canvas);
+  }, [endStroke, paintMaskLayer]);
 
   const getPos = useCallback(e => {
     const rect = canvasWrapRef.current.getBoundingClientRect();
@@ -464,13 +511,14 @@ export default function App() {
     return { x: (screenX - panX) / zoom, y: (screenY - panY) / zoom };
   }, []);
 
+  // Menggambar ke canvas kerja stroke (strokeRef). Tidak menyentuh state tiles —
+  // commit (dan penentuan status) terjadi sekali di endStroke.
   const drawStroke = useCallback((pos, prev) => {
-    const { tiles, curIdx, tileSize, brushSize, tool, maskOpacity } = W.current;
-    const tile = tiles[curIdx];
+    const s = strokeRef.current;
+    if (!s) return;
+    const { tileSize, brushSize, tool } = W.current;
     if (pos.x < 0 || pos.x > DISPLAY || pos.y < 0 || pos.y > DISPLAY) return;
-    let mc = tile.maskCanvas;
-    if (!mc) { mc = document.createElement("canvas"); mc.width = tileSize; mc.height = tileSize; }
-    const ctx = mc.getContext("2d");
+    const ctx = s.canvas.getContext("2d");
     const sc = tileSize / DISPLAY;
     const r = (brushSize / 2) * sc;
     ctx.beginPath();
@@ -492,30 +540,22 @@ export default function App() {
       ctx.fillStyle = "rgba(0,0,0,1)"; ctx.fill();
       ctx.globalCompositeOperation = "source-over";
     }
-    const updated = [...W.current.tiles];
-    updated[curIdx] = { ...tile, maskCanvas: mc, status: "labeled" };
-    setTiles(updated);
-    if (maskRef.current) {
-      const mCtx = maskRef.current.getContext("2d");
-      mCtx.clearRect(0, 0, DISPLAY, DISPLAY);
-      mCtx.globalAlpha = maskOpacity;
-      mCtx.drawImage(mc, 0, 0, DISPLAY, DISPLAY);
-      mCtx.globalAlpha = 1;
-    }
-  }, []);
+    paintMaskLayer(s.canvas);
+  }, [paintMaskLayer]);
 
   const finishPolygon = useCallback(() => {
     const pts = polygonPointsRef.current;
-    if (pts.length < 3) {
-      setPolygonPoints([]);
+    const clearPoly = () => {
+      setPolygonPoints([]); polygonPointsRef.current = [];
       if (polyRef.current) polyRef.current.getContext("2d").clearRect(0, 0, DISPLAY, DISPLAY);
-      return;
-    }
-    const { tiles, curIdx, tileSize, tool, maskOpacity } = W.current;
+    };
+    if (pts.length < 3) { clearPoly(); return; }
+    const { tiles, curIdx, tileSize, tool } = W.current;
     const tile = tiles[curIdx];
+    // Menghapus di tile tanpa mask: tidak ada yang berubah, jangan buat mask kosong.
+    if (tool === "eraser" && !tile.maskCanvas) { clearPoly(); return; }
     saveUndo();
-    let mc = tile.maskCanvas;
-    if (!mc) { mc = document.createElement("canvas"); mc.width = tileSize; mc.height = tileSize; }
+    const mc = tile.maskCanvas || newMaskCanvas(tileSize);
     const ctx = mc.getContext("2d");
     const sc = tileSize / DISPLAY;
     ctx.beginPath();
@@ -530,39 +570,19 @@ export default function App() {
     }
     ctx.fill();
     ctx.globalCompositeOperation = "source-over";
-    const updated = [...W.current.tiles];
-    updated[curIdx] = { ...tile, maskCanvas: mc, status: "labeled" };
-    setTiles(updated);
-    if (maskRef.current) {
-      const mCtx = maskRef.current.getContext("2d");
-      mCtx.clearRect(0, 0, DISPLAY, DISPLAY);
-      mCtx.globalAlpha = maskOpacity;
-      mCtx.drawImage(mc, 0, 0, DISPLAY, DISPLAY);
-      mCtx.globalAlpha = 1;
-    }
-    setPolygonPoints([]);
-    if (polyRef.current) polyRef.current.getContext("2d").clearRect(0, 0, DISPLAY, DISPLAY);
-  }, [saveUndo]);
+    commitMask(curIdx, mc);
+    clearPoly();
+  }, [saveUndo, commitMask]);
 
   const fillAll = useCallback(() => {
-    const { tiles, curIdx, tileSize, maskOpacity } = W.current;
-    const tile = tiles[curIdx];
+    const { curIdx, tileSize } = W.current;
     saveUndo();
-    const mc = document.createElement("canvas");
-    mc.width = tileSize; mc.height = tileSize;
-    mc.getContext("2d").fillStyle = "rgba(255,50,50,1)";
-    mc.getContext("2d").fillRect(0, 0, tileSize, tileSize);
-    const updated = [...W.current.tiles];
-    updated[curIdx] = { ...tile, maskCanvas: mc, status: "labeled" };
-    setTiles(updated);
-    if (maskRef.current) {
-      const mCtx = maskRef.current.getContext("2d");
-      mCtx.clearRect(0, 0, DISPLAY, DISPLAY);
-      mCtx.globalAlpha = maskOpacity;
-      mCtx.drawImage(mc, 0, 0, DISPLAY, DISPLAY);
-      mCtx.globalAlpha = 1;
-    }
-  }, [saveUndo]);
+    const mc = newMaskCanvas(tileSize);
+    const ctx = mc.getContext("2d");
+    ctx.fillStyle = "rgba(255,50,50,1)";
+    ctx.fillRect(0, 0, tileSize, tileSize);
+    commitMask(curIdx, mc);
+  }, [saveUndo, commitMask]);
 
   const onWheel = useCallback(e => {
     e.preventDefault();
@@ -601,7 +621,12 @@ export default function App() {
       redrawPoly(newPts, null);
       return;
     }
+    const { tiles, curIdx, tileSize } = W.current;
+    const tile = tiles[curIdx];
+    // Eraser di tile tanpa mask: tidak ada yang dihapus — jangan buat mask/undo kosong.
+    if (tool === "eraser" && !tile.maskCanvas) return;
     saveUndo();
+    strokeRef.current = { idx: curIdx, canvas: tile.maskCanvas || newMaskCanvas(tileSize) };
     setIsDrawing(true);
     const p = getPos(e);
     lastPos.current = p;
@@ -631,24 +656,28 @@ export default function App() {
 
   const onCanvasMouseUp = useCallback(() => {
     if (isPanning) { setIsPanning(false); panStart.current = null; return; }
-    if (W.current.tool !== "polygon") { setIsDrawing(false); lastPos.current = null; }
-  }, [isPanning]);
+    if (W.current.tool !== "polygon") { endStroke(); setIsDrawing(false); lastPos.current = null; }
+  }, [isPanning, endStroke]);
 
   const onCanvasMouseLeave = useCallback(() => {
-    if (W.current.tool !== "polygon") setIsDrawing(false);
+    if (W.current.tool !== "polygon") {
+      endStroke();
+      setIsDrawing(false);
+      lastPos.current = null;
+    }
     setIsPanning(false);
     setCursorVisible(false);
     panStart.current = null;
-    if (W.current.tool !== "polygon") lastPos.current = null;
-  }, []);
+  }, [endStroke]);
 
   const onCanvasMouseEnter = useCallback(() => setCursorVisible(true), []);
   const onCanvasDblClick = useCallback(() => { if (W.current.tool === "polygon") finishPolygon(); }, [finishPolygon]);
 
   const goTo = useCallback(idx => {
     if (idx < 0 || idx >= W.current.tiles.length) return;
+    endStroke(); // jangan sampai stroke yang belum selesai hilang saat pindah tile
     setCurIdx(idx);
-  }, []);
+  }, [endStroke]);
 
   const goToNextPending = useCallback(() => {
     const { tiles, curIdx } = W.current;
@@ -658,13 +687,9 @@ export default function App() {
   }, [goTo]);
 
   const clearMask = useCallback(() => {
-    const { tiles, curIdx } = W.current;
     saveUndo();
-    const updated = [...tiles];
-    updated[curIdx] = { ...tiles[curIdx], maskCanvas: null, status: "pending" };
-    setTiles(updated);
-    if (maskRef.current) maskRef.current.getContext("2d").clearRect(0, 0, DISPLAY, DISPLAY);
-  }, [saveUndo]);
+    commitMask(W.current.curIdx, null);
+  }, [saveUndo, commitMask]);
 
   const markStatus = useCallback((status) => {
     const { tiles, curIdx, autoAdvance } = W.current;
@@ -915,10 +940,15 @@ export default function App() {
       setProjectId(project.projectId);
       setImg1({ el: i1el, width: i1el.naturalWidth, height: i1el.naturalHeight, path: project.img1Path });
       setImg2({ el: i2el, width: i2el.naturalWidth, height: i2el.naturalHeight, path: project.img2Path });
+      const { tiles: repaired, fixed } = repairFalseLabels(reconstructed);
       setTileSize(project.tileSize); setStride(project.stride);
-      setTiles(reconstructed); setCurIdx(0);
+      setTiles(repaired); setCurIdx(0);
       setZoom(1); setPanX(0); setPanY(0);
       setStage("labeling");
+      if (fixed) await message(
+        `${fixed} tile berstatus "Berubah" ternyata tidak punya mask (sisa bug eraser versi lama) ` +
+        `dan dikembalikan ke "Belum". Simpan project untuk menyimpan perbaikan ini.`,
+        { title: "Perbaikan data", kind: "info" });
     } catch (e) { await message("Gagal buka project: " + String(e), { title: "Error", kind: "error" }); }
     setLoading(false);
   };
@@ -982,10 +1012,15 @@ export default function App() {
       setProjectId(manifest.projectId);
       setImg1({ el: i1el, width: i1el.naturalWidth, height: i1el.naturalHeight, path: manifest.img1Path });
       setImg2({ el: i2el, width: i2el.naturalWidth, height: i2el.naturalHeight, path: manifest.img2Path });
+      const { tiles: repaired, fixed } = repairFalseLabels(reconstructed);
       setTileSize(manifest.tileSize); setStride(manifest.stride);
-      setTiles(reconstructed); setCurIdx(0);
+      setTiles(repaired); setCurIdx(0);
       setZoom(1); setPanX(0); setPanY(0);
       setStage("labeling");
+      if (fixed) await message(
+        `${fixed} tile berstatus "Berubah" di ZIP ini mask-nya kosong (sisa bug eraser versi lama) ` +
+        `dan dikembalikan ke "Belum". Export ulang agar dataset bersih.`,
+        { title: "Perbaikan data", kind: "info" });
     } catch (e) { await message("Gagal import ZIP: " + String(e), { title: "Error", kind: "error" }); }
     setLoading(false);
   };

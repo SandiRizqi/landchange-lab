@@ -7,10 +7,10 @@ Keputusan: Blend dihapus (tanpa Difference) · kontrol mode di panel kanan (VIEW
 overlay auto-hide saat kursor tool di canvas + toggle [H] · utamakan UI/UX nyaman.
 
 ## Baseline
-- [ ] Commit Index View (package.json, App.jsx, IndexMap.jsx, indexMapUtils.js + test)
+- [x] Commit Index View (`21defdb`) + rencana (`943aba1`)
 
 ## Phase 1 — Kebenaran Data
-- [ ] **T1** `commitMask` + `maskUtils.js`: eraser tak membuat label palsu, undo pulihkan status, setTiles saat mouseup [#3]
+- [x] **T1** `commitMask` + `maskUtils.js`: eraser tak membuat label palsu, undo pulihkan status, setTiles saat mouseup, project/ZIP lama diperbaiki saat dimuat [#3] — ⏳ verifikasi manual di tauri dev
 - [ ] **T2** Shortcut tidak dobel saat tombol fokus (Enter/Space)
 
 ### ✅ Checkpoint A — data benar, menggambar lancar
