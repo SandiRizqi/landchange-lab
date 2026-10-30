@@ -5,6 +5,7 @@ import JSZip from "jszip";
 import { v4 as uuidv4 } from "uuid";
 import IndexMap from "./IndexMap.jsx";
 import { maskHasContent, statusAfterEdit } from "./maskUtils.js";
+import { shouldHandleShortcut } from "./keyboardUtils.js";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const DISPLAY = 540;
@@ -300,6 +301,14 @@ export default function App() {
     borderRadius: 4, padding: "3px 8px", fontSize: 10, cursor: "pointer", whiteSpace: "nowrap",
   });
   const panelLabel = { fontSize: 9, color: th.textFaint, letterSpacing: 1.5, marginBottom: 7 };
+
+  // Tombol tidak mengambil fokus saat diklik (Enter/Space tak memicunya ulang), dan slider
+  // melepas fokus setelah digeser — shortcut keyboard selalu langsung berfungsi.
+  const keepShortcutFocus = e => { if (e.target.closest?.("button")) e.preventDefault(); };
+  const releaseSliderFocus = () => {
+    const a = document.activeElement;
+    if (a?.tagName === "INPUT" && a.type === "range") a.blur();
+  };
 
   // ── Center canvas
   const centerCanvas = useCallback(() => {
@@ -715,7 +724,7 @@ export default function App() {
 
   useEffect(() => {
     if (stage !== "labeling") return;
-    const down = e => { if (e.code === "Space" && e.target.tagName !== "INPUT") { e.preventDefault(); setSpaceDown(true); } };
+    const down = e => { if (e.code === "Space" && shouldHandleShortcut(e.target, " ")) { e.preventDefault(); setSpaceDown(true); } };
     const up   = e => { if (e.code === "Space") { setSpaceDown(false); setIsPanning(false); } };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
@@ -725,7 +734,7 @@ export default function App() {
   useEffect(() => {
     if (stage !== "labeling") return;
     const fn = e => {
-      if (e.target.tagName === "INPUT") return;
+      if (!shouldHandleShortcut(e.target, e.key)) return;
       if (e.code === "Space") return;
       if ((e.ctrlKey || e.metaKey) && e.key === "z") { undo(); return; }
       if (e.key === "Escape" && W.current.tool === "polygon") {
@@ -768,7 +777,7 @@ export default function App() {
   useEffect(() => {
     if (stage !== "qc" || qcLayout !== "single") return;
     const fn = e => {
-      if (e.target.tagName === "INPUT") return;
+      if (!shouldHandleShortcut(e.target, e.key)) return;
       if (e.key === "ArrowRight" || e.key === "d") { setQcIndex(i => Math.min(i + 1, qcSamples.length - 1)); }
       else if (e.key === "ArrowLeft" || e.key === "a") { setQcIndex(i => Math.max(i - 1, 0)); }
       else if (e.key === "Delete" || e.key === "Backspace") {
@@ -1273,7 +1282,8 @@ export default function App() {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ height: "100vh", background: th.appBg, color: th.text,
-      fontFamily: "'IBM Plex Mono', monospace", display: "flex", flexDirection: "column", userSelect: "none" }}>
+      fontFamily: "'IBM Plex Mono', monospace", display: "flex", flexDirection: "column", userSelect: "none" }}
+      onMouseDown={keepShortcutFocus} onMouseUp={releaseSliderFocus}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Barlow+Condensed:wght@600;700;800&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
