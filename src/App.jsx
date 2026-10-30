@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open as dialogOpen, save as dialogSave, message } from "@tauri-apps/plugin-dialog";
+import { open as dialogOpen, save as dialogSave, message, ask } from "@tauri-apps/plugin-dialog";
 import JSZip from "jszip";
 import { v4 as uuidv4 } from "uuid";
 import IndexMap from "./IndexMap.jsx";
@@ -8,6 +8,7 @@ import { maskHasContent, statusAfterEdit } from "./maskUtils.js";
 import { shouldHandleShortcut } from "./keyboardUtils.js";
 import { stepSwipe, isOverlayVisible } from "./viewUtils.js";
 import { MASK_RGB, maskRgba, CURSOR_LINE, CURSOR_EDGE, polyRgba } from "./colors.js";
+import { gridDims, sizeMismatchMessage } from "./tileUtils.js";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const DISPLAY = 540;
@@ -427,13 +428,17 @@ export default function App() {
   // ── Generate tiles
   const generateTiles = useCallback(async () => {
     if (!img1 || !img2) return;
+    // Aplikasi menganggap T1 & T2 sejajar per piksel; beda ukuran = tanda tidak sejajar.
+    const mismatch = sizeMismatchMessage(img1, img2);
+    if (mismatch && !(await ask(mismatch, {
+      title: "Ukuran citra berbeda", kind: "warning", okLabel: "Lanjutkan", cancelLabel: "Batal",
+    }))) return;
     setGenerating(true);
     const pid = uuidv4();
     setProjectId(pid);
     const w = Math.min(img1.width, img2.width);
     const h = Math.min(img1.height, img2.height);
-    const cols = Math.max(1, Math.floor((w - tileSize) / stride) + 1);
-    const rows = Math.max(1, Math.floor((h - tileSize) / stride) + 1);
+    const { cols, rows } = gridDims(w, h, tileSize, stride);
     const result = [];
     let n = 0, total = rows * cols;
     for (let r = 0; r < rows; r++) {
@@ -834,8 +839,7 @@ export default function App() {
       const zip = new JSZip();
       const bef = zip.folder("before"), aft = zip.folder("after"), msk = zip.folder("masks");
       const w = Math.min(img1.width, img2.width), h = Math.min(img1.height, img2.height);
-      const cols = Math.max(1, Math.floor((w - tileSize) / stride) + 1);
-      const rows = Math.max(1, Math.floor((h - tileSize) / stride) + 1);
+      const { cols, rows } = gridDims(w, h, tileSize, stride);
       const allTileMeta = tiles.map(t => ({ id: t.id, row: t.row, col: t.col, x: t.x, y: t.y, status: t.status }));
       for (let i = 0; i < labeled.length; i++) {
         const tile = labeled[i];
@@ -884,8 +888,7 @@ export default function App() {
         if (i % 20 === 0) await sleep(0);
       }
       const w = Math.min(img1.width, img2.width), h = Math.min(img1.height, img2.height);
-      const cols = Math.max(1, Math.floor((w - tileSize) / stride) + 1);
-      const rows = Math.max(1, Math.floor((h - tileSize) / stride) + 1);
+      const { cols, rows } = gridDims(w, h, tileSize, stride);
       zip.file("project.json", JSON.stringify({
         version: 1, projectId: pid, savedAt: new Date().toISOString(),
         img1Path: img1.path, img2Path: img2.path, tileSize, stride,
@@ -1406,8 +1409,7 @@ export default function App() {
                 </div>
                 {img1 && img2 && (() => {
                   const w = Math.min(img1.width, img2.width), h = Math.min(img1.height, img2.height);
-                  const c = Math.max(1, Math.floor((w - tileSize) / stride) + 1);
-                  const r = Math.max(1, Math.floor((h - tileSize) / stride) + 1);
+                  const { cols: c, rows: r } = gridDims(w, h, tileSize, stride);
                   return (
                     <div style={{ fontSize: 11, color: th.textFaint, textAlign: "right" }}>
                       <span style={{ color: "#4a9eff", fontSize: 14 }}>{c * r}</span> tiles ({c}×{r})

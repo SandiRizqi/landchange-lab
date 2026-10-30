@@ -25,7 +25,7 @@ overlay auto-hide saat kursor tool di canvas + toggle [H] · utamakan UI/UX nyam
 ## Phase 3 — Mode Tampilan
 - [x] **T6** Hapus tint flicker [#2] — piksel flicker T1 = swipe T1 (0/1.166.400 berbeda)
 - [x] **T7** Hapus mode Blend [#1] (+ README: daftar fitur & tabel shortcut diperbarui/dikoreksi)
-- [ ] **T8** Peringatan dimensi T1 ≠ T2
+- [x] **T8** Peringatan dimensi T1 ≠ T2 (+ rumus grid di 4 tempat → `gridDims`) — Batal/Lanjutkan diverifikasi di browser
 
 ### ✅ Checkpoint C — swipe = flicker, Blend hilang
 
