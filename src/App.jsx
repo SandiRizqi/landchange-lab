@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen, save as dialogSave, message } from "@tauri-apps/plugin-dialog";
 import JSZip from "jszip";
 import { v4 as uuidv4 } from "uuid";
+import IndexMap from "./IndexMap.jsx";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const DISPLAY = 540;
@@ -1570,6 +1571,18 @@ export default function App() {
           {/* RIGHT: Tools panel */}
           <div style={{ width: 195, background: th.barBg, borderLeft: `1px solid ${th.border}`,
             padding: 14, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", flexShrink: 0 }}>
+
+            {img1 && img2 && (
+              <div>
+                <div style={panelLabel}>INDEX VIEW</div>
+                <IndexMap
+                  img={img1.el}
+                  imgW={Math.min(img1.width, img2.width)}
+                  imgH={Math.min(img1.height, img2.height)}
+                  tiles={tiles} curIdx={curIdx} tileSize={tileSize} stride={stride}
+                  onPick={goTo} th={th} />
+              </div>
+            )}
 
             {tool !== "polygon" && (
               <div>
