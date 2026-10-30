@@ -424,7 +424,9 @@ export default function App() {
     });
   }, []);
 
-  useEffect(() => { redrawDisplay(); }, [curIdx, mode, swipeX, flickerImg, img1, img2, tileSize]);
+  // `stage` ikut: canvas baru ter-mount saat masuk labeling, padahal img1/img2/curIdx
+  // sudah diset sebelumnya — tanpa ini tile pertama tampil kosong sampai ada interaksi.
+  useEffect(() => { redrawDisplay(); }, [stage, curIdx, mode, swipeX, flickerImg, img1, img2, tileSize]);
   useEffect(() => { redrawMask(); }, [curIdx, tiles, maskOpacity]);
 
   useEffect(() => {
