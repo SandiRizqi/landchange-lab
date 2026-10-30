@@ -356,9 +356,9 @@ export default function App() {
       ctx.drawImage(img2.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY); ctx.restore();
       // Garis swipe & label T1/T2 ada di layer overlay (bisa disembunyikan saat digitasi).
     } else if (mode === "flicker") {
+      // Tanpa tint warna: piksel identik dengan mode swipe, dan perubahan warna antar
+      // frame tidak menimbulkan kesan "berubah" palsu. Frame aktif ditandai di overlay/VIEW.
       ctx.drawImage(flickerImg === 1 ? img1.el : img2.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY);
-      ctx.fillStyle = flickerImg === 1 ? "rgba(59,130,246,0.10)" : "rgba(245,158,11,0.10)";
-      ctx.fillRect(0, 0, DISPLAY, DISPLAY);
     } else {
       ctx.drawImage(img1.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY);
       ctx.globalAlpha = 0.52;

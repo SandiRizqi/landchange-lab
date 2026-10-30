@@ -14,6 +14,12 @@ test("maskRgba memakai MASK_RGB dengan alpha", () => {
   assert.equal(maskRgba(0.3), `rgba(${MASK_RGB.join(",")},0.3)`);
 });
 
+test("mode flicker tidak menimpa citra dengan tint warna (tampilan = swipe)", () => {
+  const src = readFileSync(new URL("./App.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /rgba\(59,\s*130,\s*246,\s*0\.1/);
+  assert.doesNotMatch(src, /rgba\(245,\s*158,\s*11,\s*0\.1/);
+});
+
 test("aksen polygon berbeda dari warna mask (agar terlihat di atas mask)", () => {
   assert.notDeepEqual(POLY_ACCENT_RGB, MASK_RGB);
 });

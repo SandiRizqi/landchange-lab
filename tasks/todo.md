@@ -23,7 +23,7 @@ overlay auto-hide saat kursor tool di canvas + toggle [H] · utamakan UI/UX nyam
 ### ✅ Checkpoint B — canvas tidak bergeser, overlay tak menutupi, kursor terlihat
 
 ## Phase 3 — Mode Tampilan
-- [ ] **T6** Hapus tint flicker [#2]
+- [x] **T6** Hapus tint flicker [#2] — piksel flicker T1 = swipe T1 (0/1.166.400 berbeda)
 - [ ] **T7** Hapus mode Blend [#1]
 - [ ] **T8** Peringatan dimensi T1 ≠ T2
 
