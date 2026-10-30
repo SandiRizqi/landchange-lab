@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import IndexMap from "./IndexMap.jsx";
 import { maskHasContent, statusAfterEdit } from "./maskUtils.js";
 import { shouldHandleShortcut } from "./keyboardUtils.js";
+import { stepSwipe } from "./viewUtils.js";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const DISPLAY = 540;
@@ -14,6 +15,8 @@ const DISPLAY = 540;
 const QC_IMG_BG = "#5b6b80";
 const STATUS_COLOR = { pending: "#475569", labeled: "#22c55e", no_change: "#3b82f6", skipped: "#f59e0b" };
 const STATUS_LABEL = { pending: "Belum", labeled: "Berubah", no_change: "Tidak Berubah", skipped: "Skip" };
+// Mode tampilan: [mode, ikon, label, shortcut]
+const VIEW_MODES = [["swipe", "⇔", "Swipe", "1"], ["flicker", "◉", "Flicker", "2"], ["diff", "◑", "Blend", "3"]];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -761,6 +764,8 @@ export default function App() {
         "1":          () => setMode("swipe"),
         "2":          () => setMode("flicker"),
         "3":          () => setMode("diff"),
+        ",":          () => setSwipeX(x => stepSwipe(x, -1)),
+        ".":          () => setSwipeX(x => stepSwipe(x, +1)),
         "+":          () => setZoom(z => clamp(z * 1.2, 0.5, 10)),
         "=":          () => setZoom(z => clamp(z * 1.2, 0.5, 10)),
         "-":          () => setZoom(z => clamp(z / 1.2, 0.5, 10)),
@@ -1329,7 +1334,7 @@ export default function App() {
               </span>
             )}
             <span style={{ marginLeft: "auto", fontSize: 9, color: th.textTiny }}>
-              [A/D] nav · [B/E/P] brush/eraser/polygon · [Enter] polygon done · [Esc] batal · [F] fill · [C] clear · [Ctrl+Z] undo
+              [A/D] nav · [B/E/P] tool · [1-3] mode · [,/.] swipe · [F] fill · [C] clear · [Ctrl+Z] undo
             </span>
             <button onClick={() => setStage("setup")} style={smBtn(th.cardBgAlt, th.textMuted)}>← Setup</button>
           </>
@@ -1491,26 +1496,10 @@ export default function App() {
 
           {/* CENTER: Canvas area */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-            {/* Top toolbar */}
+            {/* Top toolbar — isinya statis (tidak ada elemen yang muncul/hilang sesuai
+                tool/mode) agar tingginya konstan dan canvas tidak bergeser saat digitasi. */}
             <div style={{ background: th.barBg, borderBottom: `1px solid ${th.border}`, padding: "5px 10px",
               display: "flex", alignItems: "center", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
-              {[["swipe","⇔ Swipe","1"],["flicker","◉ Flicker","2"],["diff","◑ Blend","3"]].map(([m, label, k]) => (
-                <button key={m} onClick={() => setMode(m)} style={{
-                  padding: "3px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer",
-                  border: `1px solid ${mode === m ? "#4a9eff" : th.border}`,
-                  background: mode === m ? (darkMode ? "#0d2a4a" : "#dbeafe") : th.cardBgAlt,
-                  color: mode === m ? "#4a9eff" : th.textMid,
-                }}>{label} <span style={{ fontSize: 9, opacity: 0.4 }}>[{k}]</span></button>
-              ))}
-              {mode === "flicker" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 4 }}>
-                  <span style={{ fontSize: 9, color: th.textFaint }}>speed:</span>
-                  <input type="range" min={200} max={1500} value={flickerSpeed}
-                    onChange={e => setFlickerSpeed(+e.target.value)} style={{ width: 70 }} />
-                  <span style={{ fontSize: 9, color: th.textMuted, minWidth: 30 }}>{flickerSpeed}ms</span>
-                </div>
-              )}
-              <div style={{ width: 1, background: th.border, height: 18, margin: "0 4px" }} />
               {[["brush","✏ Brush","B"],["eraser","◻ Eraser","E"],["polygon","⬡ Polygon","P"]].map(([t, label, k]) => (
                 <button key={t} onClick={() => setTool(t)} style={{
                   padding: "3px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer",
@@ -1519,33 +1508,19 @@ export default function App() {
                   color: tool === t ? "#f59e0b" : th.textMid,
                 }}>{label} <span style={{ fontSize: 9, opacity: 0.4 }}>[{k}]</span></button>
               ))}
-              {tool === "polygon" && polygonPoints.length > 0 && (
-                <span style={{ fontSize: 9, color: "#f59e0b", animation: "pulse 1s infinite" }}>
-                  {polygonPoints.length} titik · Enter/klik titik pertama=selesai · Esc=batal
-                </span>
-              )}
               <div style={{ width: 1, background: th.border, height: 18, margin: "0 4px" }} />
               <button onClick={undo} style={tbBtn(darkMode ? "#1e3a5f" : th.cardBgAlt, th.textMuted)}>↩ Undo [Ctrl+Z]</button>
               <button onClick={fillAll} style={tbBtn(darkMode ? "#2a1f0a" : "#fff7ed","#fb923c")}>⬛ Fill [F]</button>
               <button onClick={clearMask} style={tbBtn(darkMode ? "#2a1515" : "#fef2f2","#ef4444")}>✕ Clear [C]</button>
               <div style={{ width: 1, background: th.border, height: 18, margin: "0 4px" }} />
               <button onClick={() => markStatus("no_change")} style={tbBtn(darkMode ? "#0f1f3a" : "#eff6ff","#3b82f6")}>◎ No Change [N]</button>
-              <button onClick={confirmNext} style={tbBtn(darkMode ? "#0f2a1a" : "#f0fdf4","#22c55e")}>✓ Confirm [Enter]</button>
+              <button onClick={confirmNext} title="Konfirmasi & lanjut [Enter]" style={tbBtn(darkMode ? "#0f2a1a" : "#f0fdf4","#22c55e")}>✓ Confirm [↵]</button>
               <button onClick={() => markStatus("skipped")} style={tbBtn(darkMode ? "#2a200a" : "#fffbeb","#f59e0b")}>⋯ Skip [S]</button>
               <div style={{ width: 1, background: th.border, height: 18, margin: "0 4px" }} />
               <button onClick={() => goTo(curIdx - 1)} disabled={curIdx === 0} style={tbBtn(th.cardBgAlt, curIdx === 0 ? th.textTiny : th.textMuted)}>← [A]</button>
               <button onClick={() => goTo(curIdx + 1)} disabled={curIdx >= tiles.length - 1} style={tbBtn(th.cardBgAlt, curIdx >= tiles.length - 1 ? th.textTiny : th.textMuted)}>→ [D]</button>
-              <button onClick={goToNextPending} style={tbBtn(darkMode ? "#2a1f0a" : "#fffbeb","#f59e0b")}>⟶ Next Pending [J]</button>
+              <button onClick={goToNextPending} title="Lompat ke tile berikutnya yang belum dilabeli" style={tbBtn(darkMode ? "#2a1f0a" : "#fffbeb","#f59e0b")}>⟶ Pending [J]</button>
             </div>
-
-            {mode === "swipe" && (
-              <div style={{ background: th.barBg, borderBottom: `1px solid ${th.border}`, padding: "4px 16px",
-                display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                <span style={{ fontSize: 9, color: "#4a9eff", minWidth: 50 }}>◀ T1 Before</span>
-                <input type="range" min={0} max={100} value={swipeX} onChange={e => setSwipeX(+e.target.value)} style={{ flex: 1 }} />
-                <span style={{ fontSize: 9, color: "#f59e0b", minWidth: 50, textAlign: "right" }}>T2 After ▶</span>
-              </div>
-            )}
 
             {/* Canvas wrapper */}
             <div
@@ -1616,6 +1591,49 @@ export default function App() {
           {/* RIGHT: Tools panel */}
           <div style={{ width: 195, background: th.barBg, borderLeft: `1px solid ${th.border}`,
             padding: 14, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", flexShrink: 0 }}>
+
+            <div>
+              <div style={panelLabel}>VIEW</div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {VIEW_MODES.map(([m, icon, label, k]) => (
+                  <button key={m} onClick={() => setMode(m)} title={`${label} [${k}]`} style={{
+                    flex: 1, padding: "4px 0", borderRadius: 4, fontSize: 10, cursor: "pointer",
+                    border: `1px solid ${mode === m ? "#4a9eff" : th.border}`,
+                    background: mode === m ? (darkMode ? "#0d2a4a" : "#dbeafe") : th.cardBgAlt,
+                    color: mode === m ? "#4a9eff" : th.textMid,
+                  }}>{icon} {label}</button>
+                ))}
+              </div>
+              {/* Tinggi tetap: berganti mode tidak menggeser panel di bawahnya. */}
+              <div style={{ height: 40, marginTop: 8 }}>
+                {mode === "swipe" && (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 9, color: "#4a9eff" }}>T1</span>
+                      <input type="range" min={0} max={100} value={swipeX}
+                        onChange={e => setSwipeX(+e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+                      <span style={{ fontSize: 9, color: "#f59e0b" }}>T2</span>
+                    </div>
+                    <div style={{ fontSize: 9, color: th.textFaint, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
+                      <span>{swipeX}%</span><span>[,] [.] geser</span>
+                    </div>
+                  </>
+                )}
+                {mode === "flicker" && (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 9, color: th.textFaint }}>Cepat</span>
+                      <input type="range" min={200} max={1500} value={flickerSpeed}
+                        onChange={e => setFlickerSpeed(+e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+                      <span style={{ fontSize: 9, color: th.textFaint }}>Lambat</span>
+                    </div>
+                    <div style={{ fontSize: 9, color: th.textFaint, marginTop: 4 }}>
+                      Ganti citra tiap {flickerSpeed} ms
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
 
             {img1 && img2 && (
               <div>
