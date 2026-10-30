@@ -17,7 +17,7 @@ overlay auto-hide saat kursor tool di canvas + toggle [H] · utamakan UI/UX nyam
 
 ## Phase 2 — UX Digitasi
 - [x] **T3** Toolbar stabil + seksi VIEW (slider swipe/flicker pindah ke panel kanan, shortcut `,` `.`) [#5b, #7] — diverifikasi di browser (mock Tauri): posisi canvas konstan
-- [ ] **T4** Layer overlay indikator + auto-hide saat kursor tool di canvas + toggle [H]; hapus handle ⇔ [#6, #7]
+- [x] **T4** Layer overlay indikator + auto-hide saat kursor tool di canvas + toggle [H]; hapus handle ⇔ [#6, #7] — diverifikasi di browser; header satu baris (r·c + status selalu terlihat)
 - [ ] **T5** Kursor outline ganda + konstanta warna [#5a]
 
 ### ✅ Checkpoint B — canvas tidak bergeser, overlay tak menutupi, kursor terlihat

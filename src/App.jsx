@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import IndexMap from "./IndexMap.jsx";
 import { maskHasContent, statusAfterEdit } from "./maskUtils.js";
 import { shouldHandleShortcut } from "./keyboardUtils.js";
-import { stepSwipe } from "./viewUtils.js";
+import { stepSwipe, isOverlayVisible } from "./viewUtils.js";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const DISPLAY = 540;
@@ -15,6 +15,7 @@ const DISPLAY = 540;
 const QC_IMG_BG = "#5b6b80";
 const STATUS_COLOR = { pending: "#475569", labeled: "#22c55e", no_change: "#3b82f6", skipped: "#f59e0b" };
 const STATUS_LABEL = { pending: "Belum", labeled: "Berubah", no_change: "Tidak Berubah", skipped: "Skip" };
+const SHORTCUT_HINT = "[A/D] nav · [B/E/P] tool · [1-3] mode · [,/.] swipe · [H] label · [F] fill · [C] clear · [Ctrl+Z] undo";
 // Mode tampilan: [mode, ikon, label, shortcut]
 const VIEW_MODES = [["swipe", "⇔", "Swipe", "1"], ["flicker", "◉", "Flicker", "2"], ["diff", "◑", "Blend", "3"]];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -236,6 +237,8 @@ export default function App() {
   const [swipeX, setSwipeX]     = useState(50);
   const [flickerImg, setFlickerImg] = useState(1);
   const [flickerSpeed, setFlickerSpeed] = useState(650);
+  // Overlay indikator di atas canvas (label T1/T2, garis swipe, info). Toggle [H].
+  const [overlayOn, setOverlayOn] = useState(true);
 
   // Drawing
   const [tool, setTool]         = useState("brush");
@@ -305,6 +308,12 @@ export default function App() {
   });
   const panelLabel = { fontSize: 9, color: th.textFaint, letterSpacing: 1.5, marginBottom: 7 };
 
+  // Chip label kecil untuk overlay canvas.
+  const chip = (color, pos) => ({
+    position: "absolute", ...pos, background: th.overlayBg, padding: "3px 8px", borderRadius: 4,
+    fontSize: 10, color, border: `1px solid ${color}55`, whiteSpace: "nowrap",
+  });
+
   // Tombol tidak mengambil fokus saat diklik (Enter/Space tak memicunya ulang), dan slider
   // melepas fokus setelah digeser — shortcut keyboard selalu langsung berfungsi.
   const keepShortcutFocus = e => { if (e.target.closest?.("button")) e.preventDefault(); };
@@ -344,20 +353,11 @@ export default function App() {
       ctx.drawImage(img1.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY); ctx.restore();
       ctx.save(); ctx.beginPath(); ctx.rect(sx, 0, DISPLAY - sx, DISPLAY); ctx.clip();
       ctx.drawImage(img2.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY); ctx.restore();
-      ctx.strokeStyle = "#fff8"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
-      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, DISPLAY); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(sx, DISPLAY / 2, 15, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#0a1120"; ctx.font = "bold 13px sans-serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("⇔", sx, DISPLAY / 2);
-      ctx.fillStyle = "#4a9effcc"; ctx.font = "bold 11px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("T1 BEFORE", 8, 8);
-      ctx.fillStyle = "#f59e0bcc"; ctx.textAlign = "right"; ctx.fillText("T2 AFTER", DISPLAY - 8, 8);
+      // Garis swipe & label T1/T2 ada di layer overlay (bisa disembunyikan saat digitasi).
     } else if (mode === "flicker") {
       ctx.drawImage(flickerImg === 1 ? img1.el : img2.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY);
       ctx.fillStyle = flickerImg === 1 ? "rgba(59,130,246,0.10)" : "rgba(245,158,11,0.10)";
       ctx.fillRect(0, 0, DISPLAY, DISPLAY);
-      ctx.fillStyle = flickerImg === 1 ? "#4a9effcc" : "#f59e0bcc";
-      ctx.font = "bold 12px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-      ctx.fillText(flickerImg === 1 ? "◀ T1 BEFORE" : "▶ T2 AFTER", 10, 10);
     } else {
       ctx.drawImage(img1.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY);
       ctx.globalAlpha = 0.52;
@@ -766,6 +766,7 @@ export default function App() {
         "1":          () => setMode("swipe"),
         "2":          () => setMode("flicker"),
         "3":          () => setMode("diff"),
+        "h":          () => setOverlayOn(v => !v),
         ",":          () => setSwipeX(x => stepSwipe(x, -1)),
         ".":          () => setSwipeX(x => stepSwipe(x, +1)),
         "+":          () => setZoom(z => clamp(z * 1.2, 0.5, 10)),
@@ -1272,6 +1273,10 @@ export default function App() {
   const tile = tiles[curIdx];
   const showBrushCursor = cursorVisible && !spaceDown && tool !== "polygon";
   const showPolyCursor  = cursorVisible && !spaceDown && tool === "polygon";
+  const overlayVisible  = isOverlayVisible({
+    enabled: overlayOn, cursorOnCanvas: cursorVisible, panning: spaceDown,
+    polygonActive: polygonPoints.length > 0,
+  });
 
   // ── Theme toggle button style
   const themeToggleStyle = {
@@ -1304,7 +1309,7 @@ export default function App() {
 
       {/* ── TOP BAR */}
       <div style={{ background: th.barBg, borderBottom: `1px solid ${th.border}`, padding: "0 16px",
-        height: 42, display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+        height: 42, display: "flex", alignItems: "center", gap: 14, flexShrink: 0, whiteSpace: "nowrap" }}>
         <span style={{ fontFamily: "'Barlow Condensed'", fontSize: 19, fontWeight: 800, color: "#f59e0b", letterSpacing: 1 }}>
           LANDCHANGE<span style={{ color: "#4a9eff" }}>·LAB</span>
         </span>
@@ -1314,6 +1319,12 @@ export default function App() {
             <span style={{ color: th.border }}>│</span>
             <span style={{ fontSize: 11, color: th.textMuted }}>
               Tile <span style={{ color: th.text }}>{curIdx + 1}/{tiles.length}</span>
+              {tile && (
+                <>
+                  {" · "}r{tile.row} c{tile.col}{" · "}
+                  <span style={{ color: STATUS_COLOR[tile.status] }}>{STATUS_LABEL[tile.status]}</span>
+                </>
+              )}
             </span>
             <div style={{ display: "flex", gap: 10 }}>
               {Object.keys(STATUS_LABEL).map(k => stats[k] > 0 && (
@@ -1335,8 +1346,10 @@ export default function App() {
                 ID: {projectId.slice(0, 8)}
               </span>
             )}
-            <span style={{ marginLeft: "auto", fontSize: 9, color: th.textTiny }}>
-              [A/D] nav · [B/E/P] tool · [1-3] mode · [,/.] swipe · [F] fill · [C] clear · [Ctrl+Z] undo
+            {/* Hint shortcut: prioritas terendah — dipotong "…" bila sempit, teks lengkap di tooltip. */}
+            <span title={SHORTCUT_HINT} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
+              textAlign: "right", fontSize: 9, color: th.textTiny }}>
+              {SHORTCUT_HINT}
             </span>
             <button onClick={() => setStage("setup")} style={smBtn(th.cardBgAlt, th.textMuted)}>← Setup</button>
           </>
@@ -1572,21 +1585,38 @@ export default function App() {
                 </div>
               )}
 
-              <div style={{ position: "absolute", bottom: 10, right: 10, background: th.overlayBg,
-                padding: "3px 8px", borderRadius: 4, fontSize: 10, color: STATUS_COLOR[tile.status],
-                border: `1px solid ${STATUS_COLOR[tile.status]}44`, pointerEvents: "none" }}>
-                {STATUS_LABEL[tile.status]}
-              </div>
-              <div style={{ position: "absolute", bottom: 10, left: 10, background: th.overlayBg,
-                padding: "3px 8px", borderRadius: 4, fontSize: 9, color: th.textMuted, pointerEvents: "none" }}>
-                r{tile.row} · c{tile.col} · @{tile.x},{tile.y} · {Math.round(zoom * 100)}%
-              </div>
-              {zoom <= 1.05 && (
-                <div style={{ position: "absolute", top: 10, right: 10, background: th.overlayBg,
-                  padding: "3px 8px", borderRadius: 4, fontSize: 9, color: th.textMid3, pointerEvents: "none" }}>
-                  Scroll to zoom · Space+drag to pan
+              {/* Overlay indikator — memudar saat digitasi agar tidak menutupi citra.
+                  Info penting (r·c, status) juga ada di header sehingga tetap terlihat. */}
+              <div style={{ position: "absolute", inset: 0, pointerEvents: "none",
+                opacity: overlayVisible ? 1 : 0, transition: "opacity .15s" }}>
+                {mode === "swipe" && (
+                  <>
+                    <div style={{ position: "absolute",
+                      left: panX + (swipeX / 100) * DISPLAY * zoom - 1, top: panY,
+                      width: 2, height: DISPLAY * zoom,
+                      background: "repeating-linear-gradient(to bottom, #fff 0 6px, transparent 6px 11px)",
+                      boxShadow: "0 0 0 1px rgba(0,0,0,0.45)" }} />
+                    <div style={chip("#4a9eff", { top: 10, left: 10 })}>◀ T1 · BEFORE</div>
+                    <div style={chip("#f59e0b", { top: 10, right: 10 })}>T2 · AFTER ▶</div>
+                  </>
+                )}
+                {mode === "flicker" && (
+                  <div style={chip(flickerImg === 1 ? "#4a9eff" : "#f59e0b", { top: 10, left: 10 })}>
+                    {flickerImg === 1 ? "T1 · BEFORE" : "T2 · AFTER"}
+                  </div>
+                )}
+                <div style={chip(th.textMuted, { bottom: 10, left: 10 })}>
+                  r{tile.row} · c{tile.col} · @{tile.x},{tile.y} · {Math.round(zoom * 100)}%
                 </div>
-              )}
+                <div style={chip(STATUS_COLOR[tile.status], { bottom: 10, right: 10 })}>
+                  {STATUS_LABEL[tile.status]}
+                </div>
+                {zoom <= 1.05 && (
+                  <div style={{ ...chip(th.textMid3, { bottom: 10, left: "50%" }), transform: "translateX(-50%)" }}>
+                    Scroll: zoom · Space+drag: pan · [H] sembunyikan label
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1629,11 +1659,27 @@ export default function App() {
                         onChange={e => setFlickerSpeed(+e.target.value)} style={{ flex: 1, minWidth: 0 }} />
                       <span style={{ fontSize: 9, color: th.textFaint }}>Lambat</span>
                     </div>
-                    <div style={{ fontSize: 9, color: th.textFaint, marginTop: 4 }}>
-                      Ganti citra tiap {flickerSpeed} ms
+                    <div style={{ fontSize: 9, color: th.textFaint, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
+                      <span>Tampil:{" "}
+                        <span style={{ color: flickerImg === 1 ? "#4a9eff" : "#f59e0b" }}>
+                          {flickerImg === 1 ? "T1 Before" : "T2 After"}
+                        </span>
+                      </span>
+                      <span>{flickerSpeed} ms</span>
                     </div>
                   </>
                 )}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                <span style={{ fontSize: 9, color: th.textMid }} title="Label T1/T2, garis swipe & info tile di atas citra. Otomatis tersembunyi saat kursor di atas citra.">
+                  Label & garis bantu [H]
+                </span>
+                <button onClick={() => setOverlayOn(v => !v)} style={{
+                  padding: "2px 9px", borderRadius: 4, fontSize: 9, cursor: "pointer",
+                  border: `1px solid ${overlayOn ? "#22c55e55" : th.border}`,
+                  background: overlayOn ? (darkMode ? "#0f2a1a" : "#f0fdf4") : th.cardBg,
+                  color: overlayOn ? "#22c55e" : th.textMuted,
+                }}>{overlayOn ? "ON" : "OFF"}</button>
               </div>
             </div>
 
