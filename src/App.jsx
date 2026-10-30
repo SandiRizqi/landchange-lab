@@ -7,6 +7,7 @@ import IndexMap from "./IndexMap.jsx";
 import { maskHasContent, statusAfterEdit } from "./maskUtils.js";
 import { shouldHandleShortcut } from "./keyboardUtils.js";
 import { stepSwipe, isOverlayVisible } from "./viewUtils.js";
+import { MASK_RGB, maskRgba, CURSOR_LINE, CURSOR_EDGE, polyRgba } from "./colors.js";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 const DISPLAY = 540;
@@ -397,30 +398,31 @@ export default function App() {
     const ctx = polyRef.current.getContext("2d");
     ctx.clearRect(0, 0, DISPLAY, DISPLAY);
     if (!pts || pts.length === 0) return;
-    const { tool } = W.current;
-    const strokeColor = tool === "eraser" ? "#4a9eff" : "#ff3232";
-    ctx.strokeStyle = strokeColor;
-    ctx.fillStyle = tool === "eraser" ? "rgba(74,158,255,0.15)" : "rgba(255,50,50,0.15)";
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    if (mousePos) ctx.lineTo(mousePos.x, mousePos.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    if (pts.length >= 3) {
+    // Canvas ini ikut di-zoom; bagi dengan zoom agar tebal garis konstan di layar.
+    const k = 1 / (W.current.zoom || 1);
+    const tracePath = close => {
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.closePath();
+      if (close) ctx.closePath();
+      else if (mousePos) ctx.lineTo(mousePos.x, mousePos.y);
+    };
+    if (pts.length >= 3) {
+      tracePath(true);
+      ctx.fillStyle = polyRgba(0.18);
       ctx.fill();
     }
+    // Tepi hitam + garis putih putus-putus: terlihat di atas mask merah & citra apa pun.
+    tracePath(false);
+    ctx.setLineDash([]); ctx.lineWidth = 3 * k; ctx.strokeStyle = CURSOR_EDGE; ctx.stroke();
+    ctx.setLineDash([5 * k, 4 * k]); ctx.lineWidth = 1.5 * k; ctx.strokeStyle = CURSOR_LINE; ctx.stroke();
+    ctx.setLineDash([]);
     pts.forEach((p, i) => {
       ctx.beginPath();
-      ctx.arc(p.x, p.y, i === 0 ? 5 : 3, 0, Math.PI * 2);
-      ctx.fillStyle = i === 0 ? strokeColor : "#fff";
+      ctx.arc(p.x, p.y, (i === 0 ? 5 : 3) * k, 0, Math.PI * 2);
+      ctx.fillStyle = i === 0 ? polyRgba(1) : CURSOR_LINE; // titik awal = target penutup
       ctx.fill();
+      ctx.lineWidth = 1.2 * k; ctx.strokeStyle = CURSOR_EDGE; ctx.stroke();
     });
   }, []);
 
@@ -548,7 +550,7 @@ export default function App() {
       ctx.arc(pos.x * sc, pos.y * sc, r, 0, Math.PI * 2);
     }
     if (tool === "brush") {
-      ctx.fillStyle = "rgba(255,50,50,1)"; ctx.fill();
+      ctx.fillStyle = maskRgba(1); ctx.fill();
     } else {
       ctx.globalCompositeOperation = "destination-out";
       ctx.fillStyle = "rgba(0,0,0,1)"; ctx.fill();
@@ -580,7 +582,7 @@ export default function App() {
       ctx.globalCompositeOperation = "destination-out";
       ctx.fillStyle = "rgba(0,0,0,1)";
     } else {
-      ctx.fillStyle = "rgba(255,50,50,1)";
+      ctx.fillStyle = maskRgba(1);
     }
     ctx.fill();
     ctx.globalCompositeOperation = "source-over";
@@ -593,7 +595,7 @@ export default function App() {
     saveUndo();
     const mc = newMaskCanvas(tileSize);
     const ctx = mc.getContext("2d");
-    ctx.fillStyle = "rgba(255,50,50,1)";
+    ctx.fillStyle = maskRgba(1);
     ctx.fillRect(0, 0, tileSize, tileSize);
     commitMask(curIdx, mc);
   }, [saveUndo, commitMask]);
@@ -650,6 +652,9 @@ export default function App() {
   const onCanvasMouseMove = useCallback(e => {
     const rect = canvasWrapRef.current.getBoundingClientRect();
     setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    // mouseenter tidak terpicu bila canvas ter-mount tepat di bawah pointer yang diam
+    // (mis. setelah buka project) — gerakan pertama tetap memunculkan kursor.
+    setCursorVisible(true);
     if (isPanning && panStart.current) {
       setPanX(e.clientX - panStart.current.x);
       setPanY(e.clientY - panStart.current.y);
@@ -1017,8 +1022,8 @@ export default function App() {
             const imgData = ctx.getImageData(0, 0, manifest.tileSize, manifest.tileSize);
             for (let i = 0; i < imgData.data.length; i += 4) {
               const white = imgData.data[i] > 128;
-              imgData.data[i] = white ? 255 : 0; imgData.data[i+1] = white ? 50 : 0;
-              imgData.data[i+2] = white ? 50 : 0; imgData.data[i+3] = white ? 255 : 0;
+              imgData.data[i] = white ? MASK_RGB[0] : 0; imgData.data[i+1] = white ? MASK_RGB[1] : 0;
+              imgData.data[i+2] = white ? MASK_RGB[2] : 0; imgData.data[i+3] = white ? 255 : 0;
             }
             ctx.putImageData(imgData, 0, 0);
           }
@@ -1565,23 +1570,26 @@ export default function App() {
                 <canvas ref={polyRef} width={DISPLAY} height={DISPLAY} style={{ position: "absolute", inset: 0, display: "block", pointerEvents: "none" }} />
               </div>
 
+              {/* Kursor: cincin putih bertepi hitam (eraser = putus-putus) — tetap terlihat di
+                  atas mask merah pada opacity berapa pun dan di citra terang/gelap. */}
               {showBrushCursor && (
                 <div style={{
-                  position: "absolute",
-                  width: brushSize * zoom, height: brushSize * zoom,
-                  borderRadius: "50%",
-                  border: `1.5px solid ${tool === "brush" ? "#ff3232cc" : "#4a9effcc"}`,
-                  background: tool === "brush" ? "#ff323218" : "#4a9eff18",
-                  pointerEvents: "none",
-                  transform: "translate(-50%, -50%)",
-                  left: cursorPos.x, top: cursorPos.y,
+                  position: "absolute", pointerEvents: "none",
+                  width: brushSize * zoom, height: brushSize * zoom, borderRadius: "50%",
+                  left: cursorPos.x, top: cursorPos.y, transform: "translate(-50%, -50%)",
+                  border: `1.5px ${tool === "eraser" ? "dashed" : "solid"} ${CURSOR_LINE}`,
+                  boxShadow: `0 0 0 1px ${CURSOR_EDGE}, inset 0 0 0 1px ${CURSOR_EDGE}`,
                   transition: "width .08s, height .08s",
-                }} />
+                }}>
+                  <div style={{ position: "absolute", left: "50%", top: "50%", width: 3, height: 3,
+                    transform: "translate(-50%, -50%)", borderRadius: "50%",
+                    background: CURSOR_LINE, boxShadow: `0 0 0 1px ${CURSOR_EDGE}` }} />
+                </div>
               )}
               {showPolyCursor && (
                 <div style={{ position: "absolute", pointerEvents: "none", left: cursorPos.x, top: cursorPos.y, transform: "translate(-50%, -50%)", width: 16, height: 16 }}>
-                  <div style={{ position: "absolute", left: 7, top: 0, width: 2, height: 16, background: "#ff3232cc" }} />
-                  <div style={{ position: "absolute", top: 7, left: 0, width: 16, height: 2, background: "#ff3232cc" }} />
+                  <div style={{ position: "absolute", left: 7, top: 0, width: 2, height: 16, background: CURSOR_LINE, boxShadow: `0 0 0 1px ${CURSOR_EDGE}` }} />
+                  <div style={{ position: "absolute", top: 7, left: 0, width: 16, height: 2, background: CURSOR_LINE, boxShadow: `0 0 0 1px ${CURSOR_EDGE}` }} />
                 </div>
               )}
 
@@ -1704,8 +1712,10 @@ export default function App() {
                   <div style={{
                     width: Math.min(brushSize * zoom, 56), height: Math.min(brushSize * zoom, 56),
                     borderRadius: "50%", transition: "all .15s",
-                    background: tool === "brush" ? "#ff323255" : "#4a9eff22",
-                    border: `1.5px solid ${tool === "brush" ? "#ff3232" : "#4a9eff"}`,
+                    // Pratinjau = tampilan kursor sebenarnya (brush di atas warna mask).
+                    background: tool === "brush" ? maskRgba(0.35) : "transparent",
+                    border: `1.5px ${tool === "eraser" ? "dashed" : "solid"} ${CURSOR_LINE}`,
+                    boxShadow: `0 0 0 1px ${CURSOR_EDGE}, inset 0 0 0 1px ${CURSOR_EDGE}`,
                     maxWidth: 56, maxHeight: 56,
                   }} />
                 </div>
@@ -1760,7 +1770,7 @@ export default function App() {
             <div style={{ background: th.cardBgAlt, borderRadius: 6, padding: 10, border: `1px solid ${th.border}` }}>
               <div style={panelLabel}>MASK LEGEND</div>
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
-                <div style={{ width: 13, height: 13, borderRadius: 2, background: "#ff3232" }} />
+                <div style={{ width: 13, height: 13, borderRadius: 2, background: maskRgba(1) }} />
                 <span style={{ fontSize: 10, color: th.textMid2 }}>Berubah → putih</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
