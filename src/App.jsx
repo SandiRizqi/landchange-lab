@@ -16,9 +16,9 @@ const DISPLAY = 540;
 const QC_IMG_BG = "#5b6b80";
 const STATUS_COLOR = { pending: "#475569", labeled: "#22c55e", no_change: "#3b82f6", skipped: "#f59e0b" };
 const STATUS_LABEL = { pending: "Belum", labeled: "Berubah", no_change: "Tidak Berubah", skipped: "Skip" };
-const SHORTCUT_HINT = "[A/D] nav · [B/E/P] tool · [1-3] mode · [,/.] swipe · [H] label · [F] fill · [C] clear · [Ctrl+Z] undo";
+const SHORTCUT_HINT = "[A/D] nav · [B/E/P] tool · [1/2] mode · [,/.] swipe · [H] label · [F] fill · [C] clear · [Ctrl+Z] undo";
 // Mode tampilan: [mode, ikon, label, shortcut]
-const VIEW_MODES = [["swipe", "⇔", "Swipe", "1"], ["flicker", "◉", "Flicker", "2"], ["diff", "◑", "Blend", "3"]];
+const VIEW_MODES = [["swipe", "⇔", "Swipe", "1"], ["flicker", "◉", "Flicker", "2"]];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -67,7 +67,6 @@ const DARK = {
   pickGradient:     "#0a1120dd",
   scrollTrack:      "#0d1526",
   scrollThumb:      "#1e3a5f",
-  blendLabel:       "#c9d8ed66",
   // active-selected tileSize button
   tileSizeActiveBg:     "#2a1f0a",
   tileSizeActiveBorder: "#f59e0b",
@@ -101,7 +100,6 @@ const LIGHT = {
   pickGradient:     "#f1f5f9ee",
   scrollTrack:      "#f1f5f9",
   scrollThumb:      "#cbd5e1",
-  blendLabel:       "#1e293b99",
   tileSizeActiveBg:     "#fef3c7",
   tileSizeActiveBorder: "#f59e0b",
   tileSizeActiveColor:  "#d97706",
@@ -359,20 +357,8 @@ export default function App() {
       // Tanpa tint warna: piksel identik dengan mode swipe, dan perubahan warna antar
       // frame tidak menimbulkan kesan "berubah" palsu. Frame aktif ditandai di overlay/VIEW.
       ctx.drawImage(flickerImg === 1 ? img1.el : img2.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY);
-    } else {
-      ctx.drawImage(img1.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY);
-      ctx.globalAlpha = 0.52;
-      ctx.drawImage(img2.el, x, y, tileSize, tileSize, 0, 0, DISPLAY, DISPLAY);
-      ctx.globalAlpha = 1;
-      // blend label color saved in ref for use here
-      ctx.fillStyle = W.current._blendLabel || "#c9d8ed66";
-      ctx.font = "bold 11px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-      ctx.fillText("◑ BLEND T1+T2", 10, 10);
     }
   }, []);
-
-  // Keep blendLabel color accessible inside the non-reactive redrawDisplay
-  useEffect(() => { W.current._blendLabel = th.blendLabel; }, [th]);
 
   // Gambar layer mask tampilan dari sebuah canvas mask (null = kosongkan).
   const paintMaskLayer = useCallback(mc => {
@@ -770,7 +756,6 @@ export default function App() {
         "r":          resetZoom,
         "1":          () => setMode("swipe"),
         "2":          () => setMode("flicker"),
-        "3":          () => setMode("diff"),
         "h":          () => setOverlayOn(v => !v),
         ",":          () => setSwipeX(x => stepSwipe(x, -1)),
         ".":          () => setSwipeX(x => stepSwipe(x, +1)),

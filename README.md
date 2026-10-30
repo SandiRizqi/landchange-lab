@@ -9,8 +9,10 @@ Dibangun dengan **Tauri v2 + React + Vite**. Backend Rust menangani TIFF nativel
 
 - ✅ Buka GeoTIFF / TIFF / PNG / JPG langsung dari disk (via Rust `image` crate)
 - ✅ Sliding window tile generator
-- ✅ 3 mode perbandingan: **Swipe** · **Flicker** · **Blend**
-- ✅ Brush & eraser untuk menggambar change mask
+- ✅ 2 mode perbandingan: **Swipe** · **Flicker** (kontrol di seksi VIEW panel kanan)
+- ✅ Brush, eraser & polygon untuk menggambar change mask
+- ✅ **Index View**: peta citra penuh dengan posisi tile aktif & status tiap tile (klik untuk lompat)
+- ✅ Label & garis bantu otomatis tersembunyi saat digitasi (toggle `H`)
 - ✅ Export **1 file ZIP** berisi `before/` · `after/` · `masks/` (disimpan ke path pilihan user)
 - ✅ Keyboard shortcuts untuk labeling cepat
 
@@ -106,16 +108,22 @@ landchange_Ntiles.zip
 |-----|------|
 | `A` / `←` | Tile sebelumnya |
 | `D` / `→` | Tile berikutnya |
-| `Enter` | Konfirmasi & next |
+| `J` | Lompat ke tile berikutnya yang belum dilabeli |
+| `Enter` | Konfirmasi & next (saat polygon: selesaikan polygon) |
 | `N` | Tandai "Tidak Berubah" & next |
 | `S` | Skip |
+| `B` / `E` / `P` | Brush / Eraser / Polygon |
+| `Esc` | Batalkan polygon |
+| `F` | Isi seluruh tile |
 | `C` | Clear mask |
-| `B` | Brush tool |
-| `E` | Eraser tool |
-| `+` / `-` | Ubah ukuran brush |
-| `1` | Mode Swipe |
-| `2` | Mode Flicker |
-| `3` | Mode Blend |
+| `Ctrl+Z` | Undo |
+| `[` / `]` | Perkecil / perbesar brush |
+| `+` / `-` | Zoom in / out |
+| `R` | Reset zoom (fit) |
+| `Space` + drag | Pan |
+| `1` / `2` | Mode Swipe / Flicker |
+| `,` / `.` | Geser garis swipe ke kiri / kanan |
+| `H` | Tampilkan / sembunyikan label & garis bantu |
 
 ---
 
