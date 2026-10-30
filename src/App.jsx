@@ -4,6 +4,8 @@ import { open as dialogOpen, save as dialogSave, message, ask } from "@tauri-app
 import JSZip from "jszip";
 import { v4 as uuidv4 } from "uuid";
 import IndexMap from "./IndexMap.jsx";
+import TileList from "./TileList.jsx";
+import { STATUS_COLOR, STATUS_LABEL } from "./status.js";
 import { maskHasContent, statusAfterEdit } from "./maskUtils.js";
 import { shouldHandleShortcut } from "./keyboardUtils.js";
 import { stepSwipe, isOverlayVisible } from "./viewUtils.js";
@@ -15,8 +17,6 @@ const DISPLAY = 540;
 // Backdrop for QC image panels — deliberately NOT black/white so that
 // black/white change masks stay visible against it.
 const QC_IMG_BG = "#5b6b80";
-const STATUS_COLOR = { pending: "#475569", labeled: "#22c55e", no_change: "#3b82f6", skipped: "#f59e0b" };
-const STATUS_LABEL = { pending: "Belum", labeled: "Berubah", no_change: "Tidak Berubah", skipped: "Skip" };
 const SHORTCUT_HINT = "[A/D] nav · [B/E/P] tool · [1/2] mode · [,/.] swipe · [H] label · [F] fill · [C] clear · [Ctrl+Z] undo";
 // Mode tampilan: [mode, ikon, label, shortcut]
 const VIEW_MODES = [["swipe", "⇔", "Swipe", "1"], ["flicker", "◉", "Flicker", "2"]];
@@ -1471,34 +1471,13 @@ export default function App() {
           {/* LEFT: Tile list */}
           <div style={{ width: 158, background: th.barBg, borderRight: `1px solid ${th.border}`,
             display: "flex", flexDirection: "column", flexShrink: 0 }}>
-            <div style={{ padding: "7px 10px", fontSize: 10, color: th.textFaint, letterSpacing: 1,
+            <div style={{ padding: "7px 10px", fontSize: 10, color: th.textFaint, letterSpacing: 1, whiteSpace: "nowrap", gap: 6,
               borderBottom: `1px solid ${th.border}`, flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>TILES ({tiles.length})</span>
               <button onClick={goToNextPending} title="Jump to next pending [J]"
                 style={{ ...smBtn(th.cardBg, "#f59e0b"), padding: "1px 6px", fontSize: 9 }}>→ pending</button>
             </div>
-            <div style={{ overflowY: "auto", flex: 1 }}>
-              {tiles.map((t, i) => (
-                <div key={t.id} onClick={() => goTo(i)}
-                  style={{
-                    padding: "5px 8px", cursor: "pointer",
-                    background: i === curIdx ? th.tileActive : "transparent",
-                    borderLeft: `3px solid ${i === curIdx ? th.tileActiveBorder : STATUS_COLOR[t.status] + "55"}`,
-                    borderBottom: `1px solid ${th.tileBorder}`,
-                    display: "flex", alignItems: "center", gap: 6, transition: "background .1s",
-                  }}
-                  onMouseEnter={e => { if (i !== curIdx) e.currentTarget.style.background = th.tileHover; }}
-                  onMouseLeave={e => { if (i !== curIdx) e.currentTarget.style.background = "transparent"; }}>
-                  <div style={{ width: 40, height: 28, background: th.cardBg, borderRadius: 3, overflow: "hidden", flexShrink: 0 }}>
-                    {img1 && <TileThumbnail img={img1.el} x={t.x} y={t.y} size={tileSize} />}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 9, color: i === curIdx ? th.text : th.textMid }}>r{t.row} c{t.col}</div>
-                    <div style={{ fontSize: 9, color: STATUS_COLOR[t.status] }}>{STATUS_LABEL[t.status]}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <TileList tiles={tiles} curIdx={curIdx} img={img1?.el} tileSize={tileSize} th={th} onPick={goTo} />
           </div>
 
           {/* CENTER: Canvas area */}
@@ -2010,15 +1989,4 @@ function QCSingle({ sample, index, total, onPrev, onNext, onDelete, hardDelete, 
       </div>
     </div>
   );
-}
-
-function TileThumbnail({ img, x, y, size }) {
-  const ref = useRef();
-  useEffect(() => {
-    if (!ref.current || !img) return;
-    const ctx = ref.current.getContext("2d");
-    ctx.clearRect(0, 0, 40, 28);
-    ctx.drawImage(img, x, y, size, size, 0, 0, 40, 28);
-  }, [img, x, y, size]);
-  return <canvas ref={ref} width={40} height={28} style={{ display: "block" }} />;
 }

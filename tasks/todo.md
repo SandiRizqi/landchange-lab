@@ -30,7 +30,7 @@ overlay auto-hide saat kursor tool di canvas + toggle [H] · utamakan UI/UX nyam
 ### ✅ Checkpoint C — swipe = flicker, Blend hilang
 
 ## Phase 4 — Opsional
-- [ ] **T9** Daftar tile memo + windowing
+- [x] **T9** Daftar tile memo + windowing + auto-scroll ke tile aktif — 1.140 tile: ±28 baris di DOM, tile aktif selalu terlihat
 
 ## Selesai
 - [x] **#4 Index View** (minimap lokasi tile) — dibuat, masuk baseline commit
